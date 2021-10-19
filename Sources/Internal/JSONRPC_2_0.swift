@@ -5,6 +5,8 @@
 import Foundation
 
 enum JSONRPC_2_0 {
+    static let rpcVersion = "2.0"
+    
     struct JSON: Equatable, ExpressibleByStringInterpolation {
         var string: String
 
@@ -171,7 +173,6 @@ enum JSONRPC_2_0 {
 
     /// https://www.jsonrpc.org/specification#request_object
     struct Request: Hashable, Codable {
-        let jsonrpc = "2.0"
         var method: String
         var params: Params?
         var id: IDType?
@@ -242,7 +243,6 @@ enum JSONRPC_2_0 {
 
     /// https://www.jsonrpc.org/specification#response_object
     struct Response: Hashable, Codable {
-        let jsonrpc = "2.0"
         var result: Payload
         var id: IDType
 

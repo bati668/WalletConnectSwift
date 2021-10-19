@@ -22,10 +22,12 @@ class WebSocketConnection {
     // serial queue for receiving the calls.
     private let serialCallbackQueue: DispatchQueue
 
-    var isOpen: Bool {
-        return socket.isConnected
-    }
+    private(set) var isOpen: Bool = false
 
+    deinit {
+        pingTimer?.invalidate()
+    }
+    
     init(url: WCURL,
          onConnect: (() -> Void)?,
          onDisconnect: ((Error?) -> Void)?,
@@ -35,7 +37,7 @@ class WebSocketConnection {
         self.onDisconnect = onDisconnect
         self.onTextReceive = onTextReceive
         serialCallbackQueue = DispatchQueue(label: "org.walletconnect.swift.connection-\(url.bridgeURL)-\(url.topic)")
-        socket = WebSocket(url: url.bridgeURL)
+        socket = WebSocket(request: URLRequest(url: url.bridgeURL))
         socket.delegate = self
         socket.callbackQueue = serialCallbackQueue
     }
@@ -49,7 +51,7 @@ class WebSocketConnection {
     }
 
     func send(_ text: String) {
-        guard socket.isConnected else { return }
+        guard isOpen else { return }
         socket.write(string: text)
         log(text)
     }
@@ -65,25 +67,37 @@ class WebSocketConnection {
     }
 }
 
-extension WebSocketConnection: WebSocketDelegate {
-    func websocketDidConnect(socket: WebSocketClient) {
-        pingTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
-            LogService.shared.log("WC: ==> ping")
-            self?.socket.write(ping: Data())
-        }
-        onConnect?()
-    }
 
-    func websocketDidDisconnect(socket: WebSocketClient, error: Error?) {
+extension WebSocketConnection: WebSocketDelegate {
+    func didReceive(event: WebSocketEvent, client: WebSocket) {
+        switch event {
+        case .connected:
+            pingTimer = Timer.scheduledTimer(withTimeInterval: pingInterval, repeats: true) { [weak self] _ in
+                LogService.shared.log("WC: ==> ping")
+                self?.socket.write(ping: Data())
+            }
+            LogService.shared.log("WC: ==> connected")
+            isOpen = true
+            onConnect?()
+        case .disconnected:
+            didDisconnect()
+        case .error(let error):
+            didDisconnect(with: error)
+        case .text(let text):
+            onTextReceive?(text)
+        default:
+            LogService.shared.log("WC: ==> unhandled event: \(event)")
+            break
+        }
+    }
+    
+    private func didDisconnect(with error: Error? = nil) {
+        LogService.shared.log("WC: ==> disconnected")
+        if let error = error {
+            LogService.shared.log("WC: ==> error: \(error)")
+        }
+        isOpen = false
         pingTimer?.invalidate()
         onDisconnect?(error)
-    }
-
-    func websocketDidReceiveMessage(socket: WebSocketClient, text: String) {
-        onTextReceive?(text)
-    }
-
-    func websocketDidReceiveData(socket: WebSocketClient, data: Data) {
-        // no-op
     }
 }
